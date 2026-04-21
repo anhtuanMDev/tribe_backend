@@ -3,9 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model, authenticate
-from django.utils import timezone
-from datetime import timedelta
+from django.contrib.auth import get_user_model
 from .models import EmailVerificationCode
 from django.template.loader import render_to_string
 from django.contrib.auth.tokens import default_token_generator
@@ -22,6 +20,8 @@ from .serializers import (
 )
 from datetime import datetime
 from django_ratelimit.decorators import ratelimit
+from django.utils import timezone
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -33,6 +33,23 @@ def health_check(request):
 
 class RegisterView(APIView):
     def post(self, request):
+        # check if email belongs to a soft-deleted account past 1 week
+        email = request.data.get("email")
+        if email:
+            try:
+                existing = User.objects.get(email=email)
+                if existing.is_deleted and not existing.is_restorable:
+                    existing.permanent_delete()
+                elif existing.is_deleted and existing.is_restorable:
+                    return Response(
+                        {
+                            "error": "This account was recently deleted and can still be restored."
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except User.DoesNotExist:
+                pass
+
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -112,12 +129,28 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            user = authenticate(
-                request,
-                username=serializer.validated_data["email"],
-                password=serializer.validated_data["password"],
-            )
-            if user:
+            email = serializer.validated_data["email"]
+            password = serializer.validated_data["password"]
+            try:
+                user = User.objects.get(email=email)
+                if not user.check_password(password):
+                    return Response(
+                        {"error": "Invalid credentials"},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
+                if user.is_deleted:
+                    if user.is_restorable:
+                        user.restore()
+                    else:
+                        return Response(
+                            {"error": "Account has been permanently deleted."},
+                            status=status.HTTP_401_UNAUTHORIZED,
+                        )
+                if not user.is_active:
+                    return Response(
+                        {"error": "Please verify your email first."},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
                 refresh = RefreshToken.for_user(user)
                 return Response(
                     {
@@ -125,9 +158,11 @@ class LoginView(APIView):
                         "refresh": str(refresh),
                     }
                 )
-            return Response(
-                {"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
-            )
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

@@ -1,12 +1,40 @@
+from datetime import timedelta
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 import random
+from django.utils import timezone
 
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
+
+    @property
+    def is_restorable(self):
+        if not self.deleted_at:
+            return False
+        return timezone.now() < self.deleted_at + timedelta(weeks=1)
+
+    def soft_delete(self):
+        self.deleted_at = timezone.now()
+        self.is_active = False
+        self.save()
+
+    def restore(self):
+        self.deleted_at = None
+        self.is_active = True
+        self.save()
+
+    def permanent_delete(self):
+        self.email = f"deleted_{self.id}@deleted.tribe"
+        self.is_active = False
+        self.save()
 
 
 class EmailVerificationCode(models.Model):
