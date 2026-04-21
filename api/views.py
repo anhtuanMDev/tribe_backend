@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,7 +11,7 @@ from django.template.loader import render_to_string
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
-from django.core.mail import send_mail, EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
 from .serializers import (
     ForgotPasswordSerializer,
@@ -20,8 +21,14 @@ from .serializers import (
     VerifyEmailSerializer,
 )
 from datetime import datetime
+from django_ratelimit.decorators import ratelimit
 
 User = get_user_model()
+
+
+@ratelimit(key="ip", rate="1/4m", block=True)
+def health_check(request):
+    return JsonResponse({"status": "ok"})
 
 
 class RegisterView(APIView):
