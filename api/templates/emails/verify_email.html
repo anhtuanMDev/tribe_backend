@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Verify Your Email</title>
+</head>
+
+<body style="margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8; padding:20px 0;">
+        <tr>
+            <td align="center">
+                <table width="500" cellpadding="0" cellspacing="0"
+                    style="background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+
+                    ```
+                    <!-- Header -->
+                    <tr>
+                        <td
+                            style="background:#4A7C59; color:#ffffff; text-align:center; padding:20px; font-size:20px; font-weight:bold;">
+                            Tribe
+                        </td>
+                    </tr>
+
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding:30px; color:#333;">
+                            <h2 style="margin-top:0;">Verify your email</h2>
+                            <p style="font-size:14px; line-height:1.6;">
+                                Thanks for signing up! Please use the verification code below to complete your
+                                registration.
+                            </p>
+
+                            <!-- Code box -->
+                            <div style="text-align:center; margin:30px 0;">
+                                <span
+                                    style="display:inline-block; font-size:28px; letter-spacing:6px; font-weight:bold; color:#4A7C59; background:#f1f5f9; padding:15px 25px; border-radius:8px;">
+                                    {{ verification_code }}
+                                </span>
+                            </div>
+
+                            <p style="font-size:13px; color:#666;">
+                                This code will expire in {{ expiration_minutes }} minutes.
+                            </p>
+
+                            <p style="font-size:13px; color:#666;">
+                                If you didn’t request this, you can safely ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background:#f9fafb; text-align:center; padding:15px; font-size:12px; color:#999;">
+                            © {{ year }} Tribe. All rights reserved.
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+        ```
+
+    </table>
+</body>
+
+</html>
