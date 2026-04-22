@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import dj_database_url
+from datetime import timedelta
 
 load_dotenv()
 
@@ -161,3 +162,8 @@ LOGGING = {
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+}
