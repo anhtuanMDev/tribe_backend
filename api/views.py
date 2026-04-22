@@ -43,7 +43,7 @@ class RegisterView(APIView):
                 elif existing.is_deleted and existing.is_restorable:
                     return Response(
                         {
-                            "error": "This account was recently deleted and can still be restored."
+                            "error": "This account was recently deleted and can still be restored by logging in again."
                         },
                         status=status.HTTP_400_BAD_REQUEST,
                     )
