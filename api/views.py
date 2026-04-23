@@ -164,7 +164,7 @@ class LoginView(APIView):
             except User.DoesNotExist:
                 return Response(
                     {"error": "Invalid credentials"},
-                    status=status.HTTP_401_UNAUTHORIZED,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
