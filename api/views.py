@@ -38,7 +38,10 @@ class RegisterView(APIView):
         if email:
             try:
                 existing = User.objects.get(email=email)
-                if existing.is_deleted and not existing.is_restorable:
+                if not existing.is_active and not existing.is_deleted:
+                    if timezone.now() > existing.date_joined + timedelta(days=1):
+                        existing.delete()
+                elif existing.is_deleted and not existing.is_restorable:
                     existing.permanent_delete()
                 elif existing.is_deleted and existing.is_restorable:
                     return Response(
