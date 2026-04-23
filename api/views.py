@@ -138,7 +138,7 @@ class LoginView(APIView):
                 user = User.objects.get(email=email)
                 if not user.check_password(password):
                     return Response(
-                        {"error": "Invalid credentials"},
+                        {"error": "Email or password is incorrect."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 if user.is_deleted:
@@ -146,7 +146,7 @@ class LoginView(APIView):
                         user.restore()
                     else:
                         return Response(
-                            {"error": "Account has been permanently deleted."},
+                            {"error": "Your email hasn’t been verified yet."},
                             status=status.HTTP_401_UNAUTHORIZED,
                         )
                 if not user.is_active:
@@ -163,10 +163,13 @@ class LoginView(APIView):
                 )
             except User.DoesNotExist:
                 return Response(
-                    {"error": "Invalid credentials"},
+                    {"error": "Email or password is incorrect."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Email or password is incorrect."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
 
 class ForgotPasswordView(APIView):
