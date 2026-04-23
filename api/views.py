@@ -139,7 +139,7 @@ class LoginView(APIView):
                 if not user.check_password(password):
                     return Response(
                         {"error": "Invalid credentials"},
-                        status=status.HTTP_401_UNAUTHORIZED,
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
                 if user.is_deleted:
                     if user.is_restorable:
