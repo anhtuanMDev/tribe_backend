@@ -1,15 +1,14 @@
 from api.views import health_check
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView,
     LoginView,
-    ForgotPasswordView,
-    ResetPasswordView,
     VerifyEmailView,
     RequestVerificationView,
     ConfirmVerificationView,
+    ResetPasswordView,
 )
-from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
     path("health/", health_check),

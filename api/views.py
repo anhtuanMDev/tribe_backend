@@ -176,66 +176,6 @@ class LoginView(APIView):
         )
 
 
-class ForgotPasswordView(APIView):
-    def post(self, request):
-        serializer = ForgotPasswordSerializer(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data["email"]
-            try:
-                user = User.objects.get(email=email)
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
-                token = default_token_generator.make_token(user)
-                reset_link = f"tribeapp://reset-password/{uid}/{token}"
-
-                html_content = render_to_string(
-                    "emails/forgot_password.html",
-                    {
-                        "reset_link": reset_link,
-                        "expiration_minutes": 10,
-                        "year": datetime.now().year,
-                    },
-                )
-
-                email_msg = EmailMultiAlternatives(
-                    subject="Reset your Tribe password",
-                    body=f"Click the link to reset your password: {reset_link}",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[email],
-                )
-                email_msg.attach_alternative(html_content, "text/html")
-                email_msg.send()
-
-            except User.DoesNotExist:
-                pass
-            return Response(
-                {"message": "If that email exists you will receive a reset link."}
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class ResetPasswordView(APIView):
-    def post(self, request):
-        serializer = ResetPasswordSerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                uid = force_str(urlsafe_base64_decode(serializer.validated_data["uid"]))
-                user = User.objects.get(pk=uid)
-                token = serializer.validated_data["token"]
-                if default_token_generator.check_token(user, token):
-                    user.set_password(serializer.validated_data["new_password"])
-                    user.save()
-                    return Response({"message": "Password reset successful."})
-                return Response(
-                    {"error": "Invalid or expired token."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            except (User.DoesNotExist, ValueError):
-                return Response(
-                    {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
-                )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 class RequestVerificationView(APIView):
     def post(self, request):
         serializer = RequestVerificationSerializer(data=request.data)
