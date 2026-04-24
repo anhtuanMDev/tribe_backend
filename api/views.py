@@ -1,3 +1,7 @@
+from random import random
+from api.serializers import RequestVerificationSerializer
+from api.serializers import ConfirmVerificationSerializer
+from api.models import VerificationRequest
 from django.http import JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -228,5 +232,123 @@ class ResetPasswordView(APIView):
             except (User.DoesNotExist, ValueError):
                 return Response(
                     {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RequestVerificationView(APIView):
+    def post(self, request):
+        serializer = RequestVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data["email"]
+            purpose = serializer.validated_data["purpose"]
+            try:
+                user = User.objects.get(email=email)
+
+                # delete old requests for same purpose
+                VerificationRequest.objects.filter(user=user, purpose=purpose).delete()
+
+                verification = VerificationRequest.objects.create(
+                    user=user, purpose=purpose, code=str(random.randint(100000, 999999))
+                )
+
+                html_content = render_to_string(
+                    "emails/verify_email.html",
+                    {
+                        "verification_code": verification.code,
+                        "expiration_minutes": 10,
+                        "year": datetime.now().year,
+                    },
+                )
+
+                email_msg = EmailMultiAlternatives(
+                    subject="Verify your identity",
+                    body=f"Your verification code is: {verification.code}",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[email],
+                )
+                email_msg.attach_alternative(html_content, "text/html")
+                email_msg.send()
+
+            except User.DoesNotExist:
+                pass  # don't reveal if email exists
+
+            return Response(
+                {
+                    "message": "If that email exists you will receive a verification code."
+                }
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ConfirmVerificationView(APIView):
+    def post(self, request):
+        serializer = ConfirmVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data["email"]
+            code = serializer.validated_data["code"]
+            purpose = serializer.validated_data["purpose"]
+            try:
+                user = User.objects.get(email=email)
+                verification = VerificationRequest.objects.get(
+                    user=user,
+                    purpose=purpose,
+                    is_verified=False,
+                )
+
+                if verification.is_expired:
+                    verification.delete()
+                    return Response(
+                        {"error": "Code expired."}, status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                if verification.code != code:
+                    return Response(
+                        {"error": "Invalid code."}, status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                verification.is_verified = True
+                verification.save()
+
+                return Response({"message": "Verified successfully."})
+
+            except (User.DoesNotExist, VerificationRequest.DoesNotExist):
+                return Response(
+                    {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ResetPasswordView(APIView):
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data["email"]
+            new_password = serializer.validated_data["new_password"]
+            try:
+                user = User.objects.get(email=email)
+                verification = VerificationRequest.objects.get(
+                    user=user,
+                    purpose="reset_password",
+                    is_verified=True,
+                )
+
+                if verification.is_expired:
+                    verification.delete()
+                    return Response(
+                        {"error": "Verification expired. Please request a new code."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                user.set_password(new_password)
+                user.save()
+                verification.delete()
+
+                return Response({"message": "Password reset successful."})
+
+            except (User.DoesNotExist, VerificationRequest.DoesNotExist):
+                return Response(
+                    {"error": "Invalid request. Please verify your email first."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

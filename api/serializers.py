@@ -33,3 +33,19 @@ class ResetPasswordSerializer(serializers.Serializer):
 class VerifyEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField(max_length=6)
+
+
+class RequestVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    purpose = serializers.ChoiceField(choices=["reset_password", "delete_account"])
+
+
+class ConfirmVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6)
+    purpose = serializers.ChoiceField(choices=["reset_password", "delete_account"])
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    new_password = serializers.CharField(min_length=8, write_only=True)

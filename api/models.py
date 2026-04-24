@@ -1,3 +1,4 @@
+from api.constants import PURPOSE_CHOICES
 from datetime import timedelta
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -45,3 +46,19 @@ class EmailVerificationCode(models.Model):
     def generate(self):
         self.code = str(random.randint(100000, 999999))
         self.save()
+
+
+class VerificationRequest(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=50, choices=PURPOSE_CHOICES)
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def generate(self):
+        self.code = str(random.randint(100000, 999999))
+        self.save()
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.created_at + timedelta(minutes=10)
