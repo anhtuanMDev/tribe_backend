@@ -1,4 +1,6 @@
-from random import random
+from api.constants import VerificationPurpose
+from api.models import EmailVerificationCode
+import random
 from api.serializers import RequestVerificationSerializer
 from api.serializers import ConfirmVerificationSerializer
 from api.models import VerificationRequest
@@ -8,15 +10,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .models import EmailVerificationCode
 from django.template.loader import render_to_string
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes, force_str
 from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
 from .serializers import (
-    ForgotPasswordSerializer,
     ResetPasswordSerializer,
     RegisterSerializer,
     LoginSerializer,
@@ -33,103 +30,6 @@ User = get_user_model()
 @ratelimit(key="ip", rate="1/4m", block=True)
 def health_check(request):
     return JsonResponse({"status": "ok"})
-
-
-class RegisterView(APIView):
-    def post(self, request):
-        # check if email belongs to a soft-deleted account past 1 week
-        email = request.data.get("email")
-        if email:
-            try:
-                existing = User.objects.get(email=email)
-                if not existing.is_active and not existing.is_deleted:
-                    if timezone.now() > existing.date_joined + timedelta(days=1):
-                        existing.delete()
-                elif existing.is_deleted and not existing.is_restorable:
-                    existing.permanent_delete()
-                elif existing.is_deleted and existing.is_restorable:
-                    return Response(
-                        {
-                            "error": "This account was recently deleted and can still be restored by logging in again."
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-            except User.DoesNotExist:
-                pass
-
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            user.is_active = False
-            user.save()
-
-            verification = EmailVerificationCode.objects.create(user=user)
-            verification.generate()
-
-            html_content = render_to_string(
-                "emails/verify_email.html",
-                {
-                    "verification_code": verification.code,
-                    "expiration_minutes": 10,
-                    "year": datetime.now().year,
-                },
-            )
-
-            email = EmailMultiAlternatives(
-                subject="Verify your Tribe account",
-                body=f"Your verification code is: {verification.code}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-            )
-            email.attach_alternative(html_content, "text/html")
-            email.send()
-
-            return Response(
-                {
-                    "message": "Registration successful. Check your email for the verification code."
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class VerifyEmailView(APIView):
-    def post(self, request):
-        serializer = VerifyEmailSerializer(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data["email"]
-            code = serializer.validated_data["code"]
-            try:
-                user = User.objects.get(email=email)
-                verification = EmailVerificationCode.objects.get(user=user)
-
-                # expire code after 10 minutes
-                if timezone.now() > verification.created_at + timedelta(minutes=10):
-                    return Response(
-                        {"error": "Code expired."}, status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                if verification.code != code:
-                    return Response(
-                        {"error": "Invalid code."}, status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                user.is_active = True
-                user.save()
-                verification.delete()
-
-                refresh = RefreshToken.for_user(user)
-                return Response(
-                    {
-                        "token": str(refresh.access_token),
-                        "refresh": str(refresh),
-                    }
-                )
-            except (User.DoesNotExist, EmailVerificationCode.DoesNotExist):
-                return Response(
-                    {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
-                )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginView(APIView):
@@ -156,7 +56,7 @@ class LoginView(APIView):
                 if not user.is_active:
                     return Response(
                         {"error": "Please verify your email first."},
-                        status=status.HTTP_401_UNAUTHORIZED,
+                        status=status.HTTP_409_CONFLICT,
                     )
                 refresh = RefreshToken.for_user(user)
                 return Response(
@@ -176,48 +76,146 @@ class LoginView(APIView):
         )
 
 
-class RequestVerificationView(APIView):
+class RegisterView(APIView):
     def post(self, request):
-        serializer = RequestVerificationSerializer(data=request.data)
+        email = request.data.get("email")
+        if email:
+            try:
+                existing = User.objects.get(email=email)
+                if existing.is_deleted and existing.is_restorable:
+                    return Response(
+                        {
+                            "error": "This account was recently deleted and can still be restored by logging in again."
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if existing.is_deleted and not existing.is_restorable:
+                    # Soft-free the email: mark it as permanently deleted, don't mutate email
+                    existing.permanent_delete()  # already exists on your model
+                    # Now fall through to create a fresh user
+                elif not existing.is_active:
+                    # Unverified lingering account — invalidate old codes, reuse account
+                    VerificationRequest.objects.filter(
+                        user=existing,
+                        purpose=VerificationPurpose.REGISTER,
+                        is_verified=False,
+                        invalidated_at__isnull=True,
+                    ).update(invalidated_at=timezone.now())
+                    # Re-issue a new code for the existing unverified user
+                    _send_register_verification(existing)
+                    return Response(
+                        {
+                            "message": "Registration successful. Check your email for the verification code."
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+                else:
+                    # Active verified account — block
+                    return Response(
+                        {"error": "An account with this email already exists."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except User.DoesNotExist:
+                pass
+
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            user.is_active = False
+            user.save()
+            _send_register_verification(user)
+            return Response(
+                {
+                    "message": "Registration successful. Check your email for the verification code."
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _send_register_verification(user):
+    """Create a fresh register VerificationRequest and send the email."""
+    verification = VerificationRequest.objects.create(
+        user=user,
+        purpose=VerificationPurpose.REGISTER,
+        code=str(random.randint(100000, 999999)),
+    )
+    html_content = render_to_string(
+        "emails/verify_email.html",
+        {
+            "verification_code": verification.code,
+            "expiration_minutes": 10,
+            "year": datetime.now().year,
+        },
+    )
+    msg = EmailMultiAlternatives(
+        subject="Verify your Tribe account",
+        body=f"Your verification code is: {verification.code}",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[user.email],
+    )
+    msg.attach_alternative(html_content, "text/html")
+    msg.send()
+    return verification
+
+
+class VerifyEmailView(APIView):
+    def post(self, request):
+        serializer = VerifyEmailSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
-            purpose = serializer.validated_data["purpose"]
+            code = serializer.validated_data["code"]
             try:
                 user = User.objects.get(email=email)
 
-                # delete old requests for same purpose
-                VerificationRequest.objects.filter(user=user, purpose=purpose).delete()
+                if user.is_active:
+                    return Response(
+                        {"error": "This account is already verified."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-                verification = VerificationRequest.objects.create(
-                    user=user, purpose=purpose, code=str(random.randint(100000, 999999))
-                )
+                verification = VerificationRequest.objects.filter(
+                    user=user,
+                    purpose=VerificationPurpose.REGISTER,
+                    is_verified=False,
+                    invalidated_at__isnull=True,
+                ).latest("created_at")
 
-                html_content = render_to_string(
-                    "emails/verify_email.html",
+                if verification.is_expired:
+                    # Don't delete — just soft-invalidate
+                    verification.invalidate()
+                    return Response(
+                        {
+                            "error": "Code expired. Please register again to get a new code."
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                if verification.code != code:
+                    return Response(
+                        {"error": "Invalid code."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                user.is_active = True
+                user.save()
+
+                verification.is_verified = True
+                verification.save()
+
+                refresh = RefreshToken.for_user(user)
+                return Response(
                     {
-                        "verification_code": verification.code,
-                        "expiration_minutes": 10,
-                        "year": datetime.now().year,
-                    },
+                        "token": str(refresh.access_token),
+                        "refresh": str(refresh),
+                    }
                 )
 
-                email_msg = EmailMultiAlternatives(
-                    subject="Verify your identity",
-                    body=f"Your verification code is: {verification.code}",
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[email],
+            except (User.DoesNotExist, VerificationRequest.DoesNotExist):
+                return Response(
+                    {"error": "Invalid request."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-                email_msg.attach_alternative(html_content, "text/html")
-                email_msg.send()
-
-            except User.DoesNotExist:
-                pass  # don't reveal if email exists
-
-            return Response(
-                {
-                    "message": "If that email exists you will receive a verification code."
-                }
-            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -230,21 +228,26 @@ class ConfirmVerificationView(APIView):
             purpose = serializer.validated_data["purpose"]
             try:
                 user = User.objects.get(email=email)
-                verification = VerificationRequest.objects.get(
+                verification = VerificationRequest.objects.filter(
                     user=user,
                     purpose=purpose,
                     is_verified=False,
-                )
+                    invalidated_at__isnull=True,
+                ).latest(
+                    "created_at"
+                )  # no more MultipleObjectsReturned 500
 
                 if verification.is_expired:
-                    verification.delete()
+                    verification.invalidate()  # soft, not delete
                     return Response(
-                        {"error": "Code expired."}, status=status.HTTP_400_BAD_REQUEST
+                        {"error": "Code expired."},
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
 
                 if verification.code != code:
                     return Response(
-                        {"error": "Invalid code."}, status=status.HTTP_400_BAD_REQUEST
+                        {"error": "Invalid code."},
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
 
                 verification.is_verified = True
@@ -254,7 +257,8 @@ class ConfirmVerificationView(APIView):
 
             except (User.DoesNotExist, VerificationRequest.DoesNotExist):
                 return Response(
-                    {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Invalid request."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -267,14 +271,15 @@ class ResetPasswordView(APIView):
             new_password = serializer.validated_data["new_password"]
             try:
                 user = User.objects.get(email=email)
-                verification = VerificationRequest.objects.get(
+                verification = VerificationRequest.objects.filter(
                     user=user,
-                    purpose="reset_password",
+                    purpose=VerificationPurpose.RESET_PASSWORD,
                     is_verified=True,
-                )
+                    invalidated_at__isnull=True,
+                ).latest("created_at")
 
                 if verification.is_expired:
-                    verification.delete()
+                    verification.invalidate()  # soft, not delete
                     return Response(
                         {"error": "Verification expired. Please request a new code."},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -282,7 +287,7 @@ class ResetPasswordView(APIView):
 
                 user.set_password(new_password)
                 user.save()
-                verification.delete()
+                verification.invalidate()  # soft-close after use
 
                 return Response({"message": "Password reset successful."})
 
@@ -292,3 +297,53 @@ class ResetPasswordView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RequestVerificationView(APIView):
+    def post(self, request):
+        serializer = RequestVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data["email"]
+            purpose = serializer.validated_data["purpose"]
+            try:
+                user = User.objects.get(email=email)
+
+                # Invalidate all previous pending codes for this purpose
+                VerificationRequest.objects.filter(
+                    user=user,
+                    purpose=purpose,
+                    is_verified=False,
+                    invalidated_at__isnull=True,
+                ).update(invalidated_at=timezone.now())
+
+                verification = VerificationRequest.objects.create(
+                    user=user,
+                    purpose=purpose,
+                    code=str(random.randint(100000, 999999)),
+                )
+
+                html_content = render_to_string(
+                    "emails/verify_email.html",
+                    {
+                        "verification_code": verification.code,
+                        "expiration_minutes": 10,
+                        "year": datetime.now().year,
+                    },
+                )
+                msg = EmailMultiAlternatives(
+                    subject="Verify your identity",
+                    body=f"Your verification code is: {verification.code}",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[email],
+                )
+                msg.attach_alternative(html_content, "text/html")
+                msg.send()
+
+            except User.DoesNotExist:
+                pass
+
+            return Response(
+                {
+                    "message": "If that email exists you will receive a verification code."
+                }
+            )

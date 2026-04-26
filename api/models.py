@@ -8,6 +8,7 @@ from django.utils import timezone
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
+    username = models.CharField(max_length=150, unique=False)
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -54,11 +55,23 @@ class VerificationRequest(models.Model):
     purpose = models.CharField(max_length=50, choices=PURPOSE_CHOICES)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)  # soft-cancel
 
     def generate(self):
         self.code = str(random.randint(100000, 999999))
         self.save()
 
+    def invalidate(self):
+        self.invalidated_at = timezone.now()
+        self.save()
+
     @property
     def is_expired(self):
         return timezone.now() > self.created_at + timedelta(minutes=10)
+
+    @property
+    def is_valid(self):
+        """Single source of truth for usability."""
+        return (
+            not self.is_verified and not self.is_expired and self.invalidated_at is None
+        )

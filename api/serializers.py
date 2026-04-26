@@ -1,3 +1,4 @@
+from api.constants import VerificationPurpose
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
@@ -24,12 +25,6 @@ class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 
-class ResetPasswordSerializer(serializers.Serializer):
-    token = serializers.CharField()
-    uid = serializers.CharField()
-    new_password = serializers.CharField(min_length=8, write_only=True)
-
-
 class VerifyEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField(max_length=6)
@@ -37,13 +32,17 @@ class VerifyEmailSerializer(serializers.Serializer):
 
 class RequestVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    purpose = serializers.ChoiceField(choices=["reset_password", "delete_account"])
+    purpose = serializers.ChoiceField(
+        choices=[VerificationPurpose.RESET_PASSWORD, VerificationPurpose.DELETE_ACCOUNT]
+    )
 
 
 class ConfirmVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField(max_length=6)
-    purpose = serializers.ChoiceField(choices=["reset_password", "delete_account"])
+    purpose = serializers.ChoiceField(
+        choices=[VerificationPurpose.RESET_PASSWORD, VerificationPurpose.DELETE_ACCOUNT]
+    )
 
 
 class ResetPasswordSerializer(serializers.Serializer):
