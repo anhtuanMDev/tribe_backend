@@ -8,6 +8,8 @@ from .views import (
     ConfirmVerificationView,
     ResetPasswordView,
     VerifyEmailView,
+    ChangePasswordView,
+    DeleteAccountView,
 )
 
 urlpatterns = [
@@ -18,5 +20,7 @@ urlpatterns = [
     path("request-verification/", RequestVerificationView.as_view()),
     path("confirm-verification/", ConfirmVerificationView.as_view()),
     path("reset-password/", ResetPasswordView.as_view()),
+    path("change-password/", ChangePasswordView.as_view()),
+    path("delete-account/", DeleteAccountView.as_view()),
     path("api/token/refresh/", TokenRefreshView.as_view()),
 ]

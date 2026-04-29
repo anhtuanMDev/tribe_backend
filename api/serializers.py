@@ -33,7 +33,11 @@ class VerifyEmailSerializer(serializers.Serializer):
 class RequestVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     purpose = serializers.ChoiceField(
-        choices=[VerificationPurpose.RESET_PASSWORD, VerificationPurpose.DELETE_ACCOUNT]
+        choices=[
+            VerificationPurpose.RESET_PASSWORD,
+            VerificationPurpose.DELETE_ACCOUNT,
+            VerificationPurpose.CHANGE_PASSWORD,
+        ]
     )
 
 
@@ -41,10 +45,19 @@ class ConfirmVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField(max_length=6)
     purpose = serializers.ChoiceField(
-        choices=[VerificationPurpose.RESET_PASSWORD, VerificationPurpose.DELETE_ACCOUNT]
+        choices=[
+            VerificationPurpose.RESET_PASSWORD,
+            VerificationPurpose.DELETE_ACCOUNT,
+            VerificationPurpose.CHANGE_PASSWORD,
+        ]
     )
 
 
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
+    new_password = serializers.CharField(min_length=8, write_only=True)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(min_length=8, write_only=True)
