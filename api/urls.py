@@ -1,3 +1,4 @@
+from api.views import ResendVerificationView
 from api.views import health_check
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -23,4 +24,5 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view()),
     path("delete-account/", DeleteAccountView.as_view()),
     path("api/token/refresh/", TokenRefreshView.as_view()),
+    path("resend-verification/", ResendVerificationView.as_view()),
 ]

@@ -470,3 +470,34 @@ class DeleteAccountView(APIView):
                 {"error": "Please verify your identity first."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class ResendVerificationView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        purpose = request.data.get("purpose")
+
+        allowed_purposes = [
+            VerificationPurpose.REGISTER,
+            VerificationPurpose.RESET_PASSWORD,
+            VerificationPurpose.DELETE_ACCOUNT,
+            VerificationPurpose.CHANGE_PASSWORD,
+        ]
+
+        if not email or purpose not in allowed_purposes:
+            return Response(
+                {"error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            if purpose == VerificationPurpose.REGISTER:
+                user = User.objects.get(email=email, is_active=False)
+            else:
+                user = User.objects.get(email=email, is_active=True)
+            _send_verification(user, purpose)
+        except User.DoesNotExist:
+            pass
+
+        return Response(
+            {"message": "If that email exists you will receive a verification code."}
+        )
