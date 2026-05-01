@@ -11,3 +11,18 @@ PURPOSE_CHOICES = {
     VerificationPurpose.DELETE_ACCOUNT: "Delete Account",
     VerificationPurpose.CHANGE_PASSWORD: "Change Password",
 }
+
+ACTIVITIES = [
+    ("Soccer", "soccer"),
+    ("Badminton", "badminton"),
+    ("Volleyball", "volleyball"),
+    ("Basketball", "basketball"),
+    ("Swimming", "swimming"),
+    ("Hiking", "hiking"),
+    ("Jogging", "jogging"),
+    ("Cycling", "cycling"),
+    ("Travel", "travel"),
+    ("Gaming", "gaming"),
+    ("Racing", "racing"),
+    ("Other", "other"),
+]
