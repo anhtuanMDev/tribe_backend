@@ -1,4 +1,5 @@
 # views.py
+from api.serializers import ActivityTypeSerializer
 from api.constants import VerificationPurpose
 import random
 from api.serializers import (
@@ -38,7 +39,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Post, PostParticipant
+from .models import Post, PostParticipant, ActivityType
 
 
 User = get_user_model()
@@ -954,4 +955,13 @@ class PostPendingRequestsView(APIView):
         )
 
         serializer = PostParticipantSerializer(pending, many=True)
+        return Response(serializer.data)
+
+
+class ActivityTypeListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        activities = ActivityType.objects.all()
+        serializer = ActivityTypeSerializer(activities, many=True)
         return Response(serializer.data)

@@ -1,3 +1,4 @@
+from api.views import ActivityTypeListView
 from api.views import ResendVerificationView
 from api.views import health_check
 from django.urls import path
@@ -47,4 +48,5 @@ urlpatterns = [
     path(
         "posts/<int:pk>/reject/<int:user_id>/", PostRejectView.as_view()
     ),  # POST reject participant
+    path("activities/", ActivityTypeListView.as_view()),
 ]
